@@ -1,0 +1,23 @@
+{
+  "image": "/data/users/jwen246/trademe/imgs/1 Marsh Avenue, Forrest Hill, North Shore City, Auckland_3.jpg",
+  "text_prompt": "window",
+  "num_instances": 2,
+  "boxes_xyxy": [
+    [
+      581.5049438476562,
+      176.88279724121094,
+      592.2828369140625,
+      252.1422576904297
+    ],
+    [
+      589.6242065429688,
+      236.35577392578125,
+      643.7693481445312,
+      268.9757995605469
+    ]
+  ],
+  "scores": [
+    0.685944139957428,
+    0.5998719334602356
+  ]
+}
