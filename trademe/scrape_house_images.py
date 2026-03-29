@@ -18,10 +18,10 @@ from playwright.sync_api import sync_playwright
 
 SEARCH_BASE = (
     "https://www.trademe.co.nz/a/property/residential/sale/"
-    "auckland/north-shore-city/search?property_type=house&page={page}"
+    "search?property_type=house&page={page}"
 )
 LISTING_RE = re.compile(
-    r"https://www\.trademe\.co\.nz/a/property/residential/sale/auckland/north-shore-city/[^/?]+/listing/(\d+)"
+    r"https://www\.trademe\.co\.nz/a/property/residential/sale/.+?/listing/(\d+)"
 )
 PHOTO_RE = re.compile(
     r"https://trademe\.tmcdn\.co\.nz/photoserver/full/(\d+)\.(jpg|jpeg|webp)", re.I
@@ -81,7 +81,7 @@ def extract_listing_photos_and_address(page) -> tuple[str, list[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape Trade Me house images")
-    parser.add_argument("--pages", type=int, default=50, help="Number of search pages (default 50)")
+    parser.add_argument("--pages", type=int, default=2500, help="Number of search pages (default 2500)")
     parser.add_argument(
         "--out",
         type=Path,
@@ -124,6 +124,9 @@ def main() -> None:
                 continue
             page.wait_for_timeout(6000)
             found = collect_listing_urls_from_page(page)
+            if not found:
+                print(f"  Page {pg}: no links found, stopping early.")
+                break
             for u in found:
                 m = LISTING_RE.search(u)
                 if m:
