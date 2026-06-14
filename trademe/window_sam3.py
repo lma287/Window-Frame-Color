@@ -9,9 +9,12 @@ Or (if your conda shim points to this install):
   /data/users/jwen246/miniconda3/bin/conda run -n base python window_sam3.py
 
 Requires: editable install of SAM 3 (this repo includes ``sam3_repo``),
-``pip install einops pycocotools psutil``, PyTorch with CUDA, and Hugging Face
-access to https://huggingface.co/facebook/sam3 — request access, then
-``huggingface-cli login`` or set ``HF_TOKEN``.
+``pip install einops pycocotools psutil``, PyTorch with CUDA, and SAM 3 weights.
+
+Weights: if ``weights/sam3.pt`` exists next to this script, it is used automatically
+(no Hugging Face). Otherwise the checkpoint is downloaded from the gated repo
+https://huggingface.co/facebook/sam3 — request access, then
+``huggingface-cli login`` or set ``HF_TOKEN``, or pass ``--checkpoint``.
 
 ``trademe/.env`` (next to this script) is loaded at startup: ``HF_TOKEN`` and
 other ``KEY=value`` lines are applied when the variable is unset or empty in the
@@ -32,6 +35,42 @@ import torch
 from PIL import Image
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+def _fix_sam3_import_path(script_root: Path) -> None:
+    """If the SAM 3 repo lives at ``<script_root>/sam3/``, ``import sam3`` can wrongly
+    resolve to that directory as a PEP 420 *namespace* (the real package is ``sam3/sam3/``).
+    That breaks ``pkg_resources.resource_filename`` with ``__file__ is None``. Put the
+    repo root on ``sys.path`` instead of ``script_root`` so ``import sam3`` loads the
+    inner package. No-op if that layout is not present (e.g. checkout renamed to
+    ``sam3_repo/``).
+    """
+    repo_root = script_root / "sam3"
+    if not (repo_root / "sam3" / "__init__.py").is_file():
+        return
+    script_root = script_root.resolve()
+    repo_s = str(repo_root.resolve())
+
+    new_path: list[str] = []
+    for p in sys.path:
+        if p == "":
+            try:
+                if Path.cwd().resolve() == script_root:
+                    continue
+            except OSError:
+                pass
+            new_path.append(p)
+            continue
+        try:
+            if Path(p).resolve() == script_root:
+                continue
+        except OSError:
+            pass
+        new_path.append(p)
+
+    sys.path[:] = new_path
+    if repo_s not in sys.path:
+        sys.path.insert(0, repo_s)
 
 
 def _load_env_file(path: Path) -> None:
@@ -303,7 +342,6 @@ def _save_outputs_subdir(
             dest / "crop_union.png",
         )
 
-
 def main() -> int:
     root = Path(__file__).resolve().parent
     _load_env_file(root / ".env")
@@ -348,7 +386,7 @@ def main() -> int:
         "--checkpoint",
         type=Path,
         default=None,
-        help="Optional local sam3.pt; otherwise downloaded from Hugging Face",
+        help="Local sam3.pt (default: weights/sam3.pt if that file exists, else Hub)",
     )
     p.add_argument(
         "--max-images",
@@ -391,6 +429,7 @@ def main() -> int:
         image_paths = [image_path]
         batch_mode = False
 
+    _fix_sam3_import_path(root)
     try:
         from sam3.model.sam3_image_processor import Sam3Processor
         from sam3.model_builder import build_sam3_image_model
@@ -407,7 +446,14 @@ def main() -> int:
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    ckpt = str(args.checkpoint) if args.checkpoint else None
+    default_local_ckpt = root / "weights" / "sam3.pt"
+    if args.checkpoint is not None:
+        ckpt_path = args.checkpoint.expanduser().resolve()
+    elif default_local_ckpt.is_file():
+        ckpt_path = default_local_ckpt
+    else:
+        ckpt_path = None
+    ckpt = str(ckpt_path) if ckpt_path is not None else None
     try:
         model = build_sam3_image_model(
             device=device,
@@ -428,7 +474,7 @@ def main() -> int:
                 "Could not download SAM 3 weights: Hugging Face gate or auth failed.\n"
                 "  1) Accept the model terms at https://huggingface.co/facebook/sam3\n"
                 "  2) Run: huggingface-cli login   (or export HF_TOKEN=...)\n"
-                "  3) Or pass a local file: --checkpoint /path/to/sam3.pt",
+                "  3) Or place sam3.pt at weights/sam3.pt or pass --checkpoint /path/to/sam3.pt",
                 file=sys.stderr,
             )
         elif "403" in msg and "gated" in msg:
