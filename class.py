@@ -711,7 +711,6 @@ for region in REGION_ORDER + ["Unknown"]:
         .reindex(FINE_CLASS_ORDER, fill_value=0)
     )
 
-    # 不显示数量为 0 的类别
     counts = counts[counts > 0]
 
     if len(counts) == 0:
